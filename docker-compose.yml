@@ -1,0 +1,11 @@
+services:
+  vpn:
+    build: .
+    container_name: reality-vpn
+    ports:
+      - "8443:8443/tcp"
+      - "8443:8443/udp"
+    volumes:
+      - ./config.json:/app/config.json
+      - ./vpn.log:/app/vpn.log
+    restart: unless-stopped

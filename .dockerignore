@@ -1,0 +1,7 @@
+config.json
+*.log
+*.pid
+__pycache__/
+.git/
+tests/
+*.tar.gz
