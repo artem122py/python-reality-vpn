@@ -33,6 +33,9 @@ def generate_link(cfg, host, port=None, name=None, with_vision=False):
 
     if with_vision:
         params.append(("flow", "xtls-rprx-vision"))
+        # Пометка в имени
+        if name and not name.endswith("-BETA"):
+            name = name + "-BETA"
 
     qs = urllib.parse.urlencode(params)
     frag = urllib.parse.quote(name, safe="")

@@ -52,6 +52,15 @@ class VlessServer:
         self._done = asyncio.Event()
 
     async def run(self):
+        # Предупреждение о beta-фиче Vision
+        if self.cfg.get("use_vision", False):
+            log.warn("=" * 60)
+            log.warn("ВНИМАНИЕ: use_vision = True")
+            log.warn("XTLS-Vision — BETA. НЕ работает с Happ/NekoBox.")
+            log.warn("Используйте ссылку БЕЗ flow=xtls-rprx-vision.")
+            log.warn("Если VPN не работает — установите use_vision = False")
+            log.warn("=" * 60)
+
         # Загружаем статистику
         stats.load()
         stats.load_user_map(self.cfg)
