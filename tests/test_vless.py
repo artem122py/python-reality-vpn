@@ -44,11 +44,12 @@ def test_parse_valid_header():
     result = asyncio.run(server._read_vless_header(reader))
 
     assert result is not None
-    uuid_got, cmd, host, port = result
+    uuid_got, cmd, host, port, flow = result
     assert cmd == CMD_TCP
     assert host == "example.com"
     assert port == 443
     assert uuid_got == uuidlib.UUID(uuid_str).bytes
+    assert flow == ""  # без Addons flow пуст
 
 
 def test_parse_truncated():
