@@ -44,6 +44,7 @@ class Stats:
         self.failed_handshakes = 0
         self.auth_failures = 0
         self.replay_attacks = 0
+        self.errors = 0
 
         # per-user
         self.users = {}                # uuid_hex -> UserStat
@@ -95,6 +96,9 @@ class Stats:
 
     def on_replay(self):
         self.replay_attacks += 1
+
+    def on_error(self):
+        self.errors += 1
 
     # ---------- per-user ----------
 
@@ -152,7 +156,8 @@ class Stats:
             f"down {self.format_bytes(self.total_down)} | "
             f"hs_fail {self.failed_handshakes} | "
             f"auth_fail {self.auth_failures} | "
-            f"replay {self.replay_attacks}"
+            f"replay {self.replay_attacks} | "
+            f"errors {self.errors}"
         )
 
     def per_user_summary(self):

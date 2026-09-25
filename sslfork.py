@@ -548,6 +548,11 @@ class _SecureReader:
         return out
 
     async def read(self, n=65536):
+        # Ограничение буфера — защита от memory exhaustion
+        if len(self.buf) > 1 * 1024 * 1024:  # 1 MB
+            log.warn("[sslfork] read buffer >1MB, closing")
+            return b""
+
         if self.buf:
             out, self.buf = self.buf[:n], self.buf[n:]
             return out

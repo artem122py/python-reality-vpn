@@ -85,7 +85,7 @@ def main():
     argv = sys.argv
 
     # Расширенные команды (без addr)
-    if len(argv) >= 2 and argv[1] in ("status", "stop", "users", "link", "stats"):
+    if len(argv) >= 2 and argv[1] in ("status", "stop", "users", "link", "stats", "version"):
         cmd = argv[1]
         rest = argv[2:]
         from vpncli import cmd_status, cmd_stop, cmd_users, cmd_link
@@ -98,6 +98,9 @@ def main():
         elif cmd == "stats":
             from vpncli import cmd_stats
             cmd_stats()
+        elif cmd == "version":
+            from vpncli import cmd_version
+            cmd_version()
         elif cmd == "link":
             # link [name] [host] [port]
             cmd_link(rest[0] if len(rest) > 0 else None,

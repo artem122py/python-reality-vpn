@@ -10,6 +10,17 @@ from genconf import gen_uuid, gen_short_id, gen_x25519
 
 
 
+def cmd_version():
+    """Показать версию сервера."""
+    try:
+        from server import SERVER_VERSION, BUILD_DATE
+        print(f"VPN Server v{SERVER_VERSION} (build {BUILD_DATE})")
+    except Exception:
+        print("VPN Server (version unknown)")
+    import sys
+    print(f"Python: {sys.version.split()[0]}")
+
+
 def cmd_status():
     """Показывает, работает ли сервер (по занятости порта)."""
     import socket

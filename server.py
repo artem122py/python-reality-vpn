@@ -27,6 +27,9 @@ VERSION = 0x00
 CMD_TCP = 0x01
 CMD_UDP = 0x02
 CMD_MUX = 0x03
+
+SERVER_VERSION = "1.0.0"
+BUILD_DATE = "2026-09-25"
 ATYP_IPV4 = 0x01
 ATYP_DOMAIN = 0x02
 ATYP_IPV6 = 0x03
@@ -52,6 +55,12 @@ class VlessServer:
         self._done = asyncio.Event()
 
     async def run(self):
+        # Игнорируем SIGPIPE — иначе падает при write в закрытый сокет
+        try:
+            signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+        except (AttributeError, ValueError):
+            pass  # Windows или не-главный поток
+
         # Предупреждение о beta-фиче Vision
         if self.cfg.get("use_vision", False):
             log.warn("=" * 60)
@@ -86,6 +95,7 @@ class VlessServer:
         )
         addrs = ", ".join(str(s.getsockname()) for s in server.sockets)
         log.info(f"VLESS listening on {addrs}")
+        log.info(f"Version: {SERVER_VERSION} (build {BUILD_DATE})")
 
         display_host = self._pick_display_host()
         try:
@@ -248,6 +258,23 @@ class VlessServer:
 
         try:
             remote_reader, remote_writer = await asyncio.open_connection(host, port)
+
+            # TCP_NODELAY + keepalive
+            try:
+                sock = remote_writer.get_extra_info("socket")
+                if sock:
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                if sock:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                    # Linux: TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT
+                    if hasattr(socket, "TCP_KEEPIDLE"):
+                        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
+                    if hasattr(socket, "TCP_KEEPINTVL"):
+                        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+                    if hasattr(socket, "TCP_KEEPCNT"):
+                        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+            except Exception as e:
+                log.debug(f"keepalive setup failed: {e}")
         except Exception as e:
             log.warn(f"{peer}: connect failed {host}:{port}: {e}")
             writer.close()
