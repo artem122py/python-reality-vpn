@@ -27,3 +27,4 @@ vpn.pid
 *.pid
 *.tar.gz
 *.zip
+check.sh

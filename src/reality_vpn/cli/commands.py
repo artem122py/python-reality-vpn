@@ -260,3 +260,20 @@ def cmd_users(args):
         cmd_users_remove(args[1])
     else:
         print(f"unknown action: {action}")
+
+
+def cmd_stats():
+    """Показать статистику сервера."""
+    from reality_vpn.utils.stats import stats
+    stats.load()
+    try:
+        cfg = load_config_file()
+        stats.load_user_map(cfg)
+    except Exception:
+        pass
+
+    print("=== global ===")
+    print(f"  {stats.summary()}")
+    print()
+    print("=== per-user ===")
+    print(stats.per_user_summary())
