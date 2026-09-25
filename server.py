@@ -9,6 +9,7 @@ import uuid as uuidlib
 from sslfork import wrap_server
 from vpnstats import stats
 from vpnguard import guard
+from vpntraffic import limiter
 from vpnlog import log
 from linkgen import generate_link
 
@@ -28,7 +29,7 @@ CMD_TCP = 0x01
 CMD_UDP = 0x02
 CMD_MUX = 0x03
 
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.0.1"
 BUILD_DATE = "2026-09-25"
 ATYP_IPV4 = 0x01
 ATYP_DOMAIN = 0x02
@@ -74,6 +75,9 @@ class VlessServer:
         stats.load()
         stats.load_user_map(self.cfg)
         log.info(f"[stats] loaded: {len(stats.users)} user(s)")
+
+        # Загружаем лимиты трафика
+        limiter.load(self.cfg)
         # Graceful shutdown через threading.Event
         # (loop.add_signal_handler НЕ работает в Termux/Android)
         import threading
@@ -225,6 +229,11 @@ class VlessServer:
             log.warn(f"{peer}: uuid mismatch")
             if not is_local_ip(peer):
                 guard.record_attempt(peer[0] if peer else "?")
+            return
+
+        # Проверяем лимит трафика
+        if not limiter.check(uuid_got, stats):
+            log.warn(f"{peer}: traffic limit exceeded")
             return
 
         # Per-user: отметить подключение
