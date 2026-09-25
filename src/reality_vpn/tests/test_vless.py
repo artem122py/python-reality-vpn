@@ -1,6 +1,6 @@
 import struct
 import uuid as uuidlib
-from server import VlessServer, VERSION, CMD_TCP, ATYP_DOMAIN
+from reality_vpn.server.server import VlessServer, VERSION, CMD_TCP, ATYP_DOMAIN
 
 
 class FakeReader:

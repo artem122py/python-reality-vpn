@@ -2,7 +2,7 @@
 """
 Полноценное логирование: уровни, цвета, файл с ротацией.
 Использование:
-    from vpnlog import log
+    from reality_vpn.utils.log import log
     log.info("...")
     log.debug("...")
     log.warn("...")
@@ -13,6 +13,9 @@ import sys
 import time
 from datetime import datetime
 
+
+import os as _os
+PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
 class _Logger:
     LEVELS = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}

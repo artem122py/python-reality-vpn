@@ -21,7 +21,7 @@ State machine:
 import os
 import struct
 import asyncio
-from vpnlog import log
+from reality_vpn.utils.log import log
 
 
 UUID_LEN = 16

@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 import pytest
-from vpnconfig import Config, DEFAULTS
+from reality_vpn.cli.config import Config, DEFAULTS
 
 
 def _write_cfg(path, data):

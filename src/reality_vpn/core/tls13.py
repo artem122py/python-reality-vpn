@@ -16,8 +16,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography import x509
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF, HKDFExpand
 
-from vpnlog import log
-from reality_pq import (
+from reality_vpn.utils.log import log
+from reality_vpn.core.sni_routing import build_router_from_config
+from reality_vpn.core.reality import (
     parse_hybrid_client_key_share,
     gen_hybrid_server_key_share,
     compute_hybrid_shared,
@@ -291,6 +292,17 @@ async def _fallback_to_dest(reader, writer, cfg, initial_bytes):
 
 # ---------- Main handshake ----------
 
+_ROUTER_CACHE = None
+
+
+def _get_router(cfg):
+    """Кэш router — чтобы не логировать каждый коннект."""
+    global _ROUTER_CACHE
+    if _ROUTER_CACHE is None:
+        _ROUTER_CACHE = build_router_from_config(cfg)
+    return _ROUTER_CACHE
+
+
 async def wrap_server(reader, writer, cfg):
     """TLS 1.3 handshake + Reality. Возвращает (secure_reader, secure_writer) или (None, None)."""
     if cfg.get("security", "tls") == "none":
@@ -344,6 +356,18 @@ async def _do_handshake(reader, writer, cfg, payload, raw_first, peer):
     """Вся логика после чтения ClientHello, с таймаутом."""
     try:
         ch = _parse_client_hello(payload)
+
+        # SNI-роутинг: выбираем dest по SNI (с кэшем)
+        router = _get_router(cfg)
+        sni = ch.get("sni")
+        dest = router.resolve(sni)
+        if dest != cfg.get("dest"):
+            log.debug(f"[sni] {sni} -> {dest}")
+
+        # Локальная копия cfg с выбранным dest
+        cfg_local = dict(cfg)
+        cfg_local["dest"] = dest
+        cfg = cfg_local
         group = ch.get("key_share_group")
 
         static_priv_bytes = bytes.fromhex(cfg["private_key"])

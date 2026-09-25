@@ -6,12 +6,12 @@ import struct
 import socket
 import uuid as uuidlib
 
-from sslfork import wrap_server
-from vpnstats import stats
-from vpnguard import guard
-from vpntraffic import limiter
-from vpnlog import log
-from linkgen import generate_link
+from reality_vpn.core.tls13 import wrap_server
+from reality_vpn.utils.stats import stats
+from reality_vpn.utils.guard import guard
+from reality_vpn.utils.traffic import limiter
+from reality_vpn.utils.log import log
+from reality_vpn.utils.linkgen import generate_link
 
 
 def is_local_ip(peer):
@@ -29,7 +29,7 @@ CMD_TCP = 0x01
 CMD_UDP = 0x02
 CMD_MUX = 0x03
 
-SERVER_VERSION = "1.0.1"
+SERVER_VERSION = "2.0.0"
 BUILD_DATE = "2026-09-25"
 ATYP_IPV4 = 0x01
 ATYP_DOMAIN = 0x02
@@ -163,7 +163,7 @@ class VlessServer:
             counter += 1
             if counter % 5 == 0:
                 try:
-                    from vpnguard import guard
+                    from reality_vpn.utils.guard import guard
                     guard.cleanup()
                 except Exception:
                     pass
@@ -255,7 +255,7 @@ class VlessServer:
         # XTLS-Vision — включается ПОСЛЕ VLESS-заголовка
         if flow == "xtls-rprx-vision" and self.cfg.get("use_vision", False):
             try:
-                from vision import enable_vision_after_header
+                from reality_vpn.server.vision import enable_vision_after_header
                 log.info("[vision] enabling for this session")
                 reader, writer = await enable_vision_after_header(
                     reader, writer, uuid_got, self.cfg,
@@ -307,52 +307,157 @@ class VlessServer:
         log.info(f"{peer} done")
 
     async def _handle_udp(self, reader, writer, host, port, peer):
+        """
+        UDP-релей. VLESS UDP:
+          [len(2)][payload] от клиента
+          [len(2)][payload] клиенту
+        Один target на соединение.
+        """
+        loop = asyncio.get_event_loop()
+
+        # Разрешаем хост
         try:
-            infos = await asyncio.get_event_loop().getaddrinfo(host, port, type=socket.SOCK_DGRAM)
+            infos = await loop.getaddrinfo(host, port,
+                                            type=socket.SOCK_DGRAM)
             if not infos:
+                log.warn(f"[udp] {peer}: no addrinfo for {host}:{port}")
                 return
-            family, _, _, _, addr = infos[0]
-            udp_sock = socket.socket(family, socket.SOCK_DGRAM)
-            udp_sock.setblocking(False)
-            udp_sock.connect(addr)
+            family, _, _, _, sockaddr = infos[0]
+        except Exception as e:
+            log.warn(f"[udp] {peer}: resolve failed {host}:{port}: {e}")
+            return
+
+        # Открываем UDP-сокет
+        udp_sock = socket.socket(family, socket.SOCK_DGRAM)
+        udp_sock.setblocking(False)
+        try:
+            udp_sock.connect(sockaddr)
+        except Exception as e:
+            log.warn(f"[udp] {peer}: connect failed: {e}")
+            udp_sock.close()
+            return
+
+        # Отвечаем VLESS-заголовком
+        try:
             writer.write(b"\x00\x00")
             await writer.drain()
-            log.info(f"{peer} -> UDP {host}:{port}")
-            loop = asyncio.get_event_loop()
+        except Exception:
+            udp_sock.close()
+            return
 
-            async def c2u():
-                try:
-                    while True:
-                        h = await reader.readexactly(2)
-                        plen = struct.unpack(">H", h)[0]
-                        p = await reader.readexactly(plen)
-                        await loop.sock_sendall(udp_sock, p)
-                except Exception:
-                    pass
+        # Счётчики
+        pkts_in = 0
+        pkts_out = 0
+        bytes_in = 0
+        bytes_out = 0
+        idle = self.cfg.get("idle_timeout", 300)
 
-            async def u2c():
-                try:
-                    while True:
-                        d = await loop.sock_recv(udp_sock, 65536)
-                        if not d:
-                            break
-                        writer.write(struct.pack(">H", len(d)) + d)
+        # Флаг для остановки
+        stop = asyncio.Event()
+
+        async def client_to_udp():
+            """client → UDP-сокет"""
+            nonlocal pkts_in, bytes_in
+            try:
+                while not stop.is_set():
+                    # Читаем 2 байта длины
+                    try:
+                        hdr = await asyncio.wait_for(
+                            reader.readexactly(2), timeout=idle
+                        )
+                    except asyncio.TimeoutError:
+                        log.debug(f"[udp] {peer}: idle timeout (client)")
+                        break
+                    except asyncio.IncompleteReadError:
+                        log.debug(f"[udp] {peer}: client closed")
+                        break
+
+                    plen = struct.unpack(">H", hdr)[0]
+                    if plen == 0:
+                        continue
+
+                    try:
+                        payload = await asyncio.wait_for(
+                            reader.readexactly(plen), timeout=5
+                        )
+                    except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+                        log.debug(f"[udp] {peer}: incomplete payload")
+                        break
+
+                    # Отправляем в UDP
+                    try:
+                        await loop.sock_sendall(udp_sock, payload)
+                        pkts_in += 1
+                        bytes_in += len(payload)
+                    except Exception as e:
+                        log.debug(f"[udp] {peer}: send failed: {e}")
+                        break
+            except Exception as e:
+                log.debug(f"[udp] {peer}: c2u error: {e}")
+            finally:
+                stop.set()
+
+        async def udp_to_client():
+            """UDP-сокет → client"""
+            nonlocal pkts_out, bytes_out
+            try:
+                while not stop.is_set():
+                    try:
+                        data = await asyncio.wait_for(
+                            loop.sock_recv(udp_sock, 65536),
+                            timeout=idle,
+                        )
+                    except asyncio.TimeoutError:
+                        log.debug(f"[udp] {peer}: idle timeout (udp)")
+                        break
+                    except Exception as e:
+                        log.debug(f"[udp] {peer}: udp recv error: {e}")
+                        break
+
+                    if not data:
+                        break
+
+                    # Отправляем клиенту: [len(2)][payload]
+                    try:
+                        writer.write(struct.pack(">H", len(data)) + data)
                         await writer.drain()
-                except Exception:
-                    pass
+                        pkts_out += 1
+                        bytes_out += len(data)
+                    except Exception as e:
+                        log.debug(f"[udp] {peer}: client write failed: {e}")
+                        break
+            except Exception as e:
+                log.debug(f"[udp] {peer}: u2c error: {e}")
+            finally:
+                stop.set()
 
-            t1 = asyncio.create_task(c2u())
-            t2 = asyncio.create_task(u2c())
-            await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+        try:
+            t1 = asyncio.create_task(client_to_udp())
+            t2 = asyncio.create_task(udp_to_client())
+
+            await asyncio.wait([t1, t2],
+                               return_when=asyncio.FIRST_COMPLETED)
+
             for t in (t1, t2):
-                t.cancel()
-            try: udp_sock.close()
-            except Exception: pass
-        except Exception as e:
-            log.warn(f"{peer}: UDP error: {e}")
+                if not t.done():
+                    t.cancel()
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
+
+            log.info(f"[udp] {peer} -> {host}:{port} closed: "
+                     f"{pkts_in}/{pkts_out} pkts, "
+                     f"{bytes_in}/{bytes_out} bytes")
         finally:
-            try: writer.close()
-            except Exception: pass
+            try:
+                udp_sock.close()
+            except Exception:
+                pass
+            try:
+                writer.close()
+            except Exception:
+                pass
 
     async def _read_vless_header(self, reader):
         try:

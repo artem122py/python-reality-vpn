@@ -6,12 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml README.md /app/
+COPY src /app/src
+RUN pip install --no-cache-dir /app
 
-COPY *.py ./
-COPY config.example.json ./
-
+WORKDIR /data
 EXPOSE 8443
 
-CMD ["python", "main.py", "server", "0.0.0.0"]
+CMD ["reality-vpn", "server", "0.0.0.0"]

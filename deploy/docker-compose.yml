@@ -1,11 +1,13 @@
 services:
   vpn:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     container_name: reality-vpn
     ports:
       - "8443:8443/tcp"
       - "8443:8443/udp"
     volumes:
-      - ./config.json:/app/config.json
-      - ./vpn.log:/app/vpn.log
+      - ../config.json:/data/config.json
+      - ../vpn.log:/data/vpn.log
     restart: unless-stopped

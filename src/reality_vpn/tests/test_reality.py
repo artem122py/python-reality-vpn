@@ -1,5 +1,5 @@
 import pytest
-from reality_pq import (
+from reality_vpn.core.reality import (
     _compute_auth_shared,
     derive_auth_key,
     _check_replay,

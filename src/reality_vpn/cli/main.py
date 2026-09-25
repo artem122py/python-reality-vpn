@@ -1,16 +1,17 @@
-# main.py
+# src/reality_vpn/cli/main.py
+"""CLI точка входа для reality-vpn."""
 import sys
 import os
-import json
 import socket
 import struct
 import fcntl
 import ipaddress
 import asyncio
 
-from server import VlessServer
-from genconf import load_config
-from vpnlog import log
+from reality_vpn.cli.config import load_config_file
+from reality_vpn.utils.genconf import load_config
+from reality_vpn.utils.log import log
+from reality_vpn.server.server import VlessServer
 
 
 SIOCGIFADDR = 0x8915
@@ -63,7 +64,7 @@ def print_addresses(addr):
 
 def parse_args(argv):
     if len(argv) < 3:
-        print("usage: python main.py server [noconfig] [--once] <addr>")
+        print("usage: reality-vpn server [noconfig] [--vision|--no-vision] [--debug] <addr>")
         sys.exit(1)
     mode = argv[1]
     noconfig = False
@@ -84,35 +85,43 @@ def parse_args(argv):
 def main():
     argv = sys.argv
 
-    # Расширенные команды (без addr)
+    # Расширенные команды
     if len(argv) >= 2 and argv[1] in ("status", "stop", "users", "link", "stats", "version", "traffic"):
         cmd = argv[1]
         rest = argv[2:]
-        from vpncli import cmd_status, cmd_stop, cmd_users, cmd_link
+        from reality_vpn.cli.commands import (
+            cmd_status, cmd_stop, cmd_users, cmd_link,
+            cmd_stats, cmd_version, cmd_traffic,
+        )
         if cmd == "status":
             cmd_status()
         elif cmd == "stop":
             cmd_stop()
         elif cmd == "users":
             cmd_users(rest)
-        elif cmd == "stats":
-            from vpncli import cmd_stats
-            cmd_stats()
-        elif cmd == "version":
-            from vpncli import cmd_version
-            cmd_version()
-        elif cmd == "traffic":
-            from vpncli import cmd_traffic
-            cmd_traffic()
         elif cmd == "link":
-            # link [name] [host] [port]
             cmd_link(rest[0] if len(rest) > 0 else None,
                      rest[1] if len(rest) > 1 else None,
-                     rest[2] if len(rest) > 2 else None)
+                     rest[2] if len(rest) > 2 else None,
+                     with_vision=("--vision" in rest))
+        elif cmd == "stats":
+            cmd_stats()
+        elif cmd == "version":
+            cmd_version()
+        elif cmd == "traffic":
+            cmd_traffic()
         return
 
     mode, noconfig, addr = parse_args(argv)
-    cfg = load_config(noconfig)
+
+    # Загружаем конфиг
+    if noconfig:
+        cfg = load_config(noconfig)
+    else:
+        try:
+            cfg = load_config_file()
+        except FileNotFoundError:
+            cfg = load_config(noconfig)
 
     if mode == "server":
         # CLI-флаги поверх конфига
@@ -134,7 +143,6 @@ def main():
         print_addresses(addr)
         print(f"[*] use_vision = {cfg.get('use_vision', False)}")
 
-        # Предупреждение о beta-фиче
         if cfg.get("use_vision", False):
             print()
             print("=" * 60)
@@ -142,7 +150,6 @@ def main():
             print("  XTLS-Vision находится в BETA-состоянии.")
             print("  Реализация неполная и НЕ работает с Happ/NekoBox.")
             print("  Используйте ссылку БЕЗ flow=xtls-rprx-vision.")
-            print("  Если VPN не работает — установите use_vision = False")
             print("=" * 60)
             print()
 

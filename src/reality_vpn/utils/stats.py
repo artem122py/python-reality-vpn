@@ -6,7 +6,9 @@ import threading
 from collections import defaultdict
 
 
-STATS_FILE = "stats.json"
+import os as _os
+PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+STATS_FILE = _os.path.join(PROJECT_ROOT, "stats.json")
 SAVE_INTERVAL = 30  # сек
 
 

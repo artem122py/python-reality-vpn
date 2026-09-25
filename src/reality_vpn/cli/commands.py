@@ -4,16 +4,16 @@ import os
 import sys
 import json
 import signal
-from vpnconfig import load_config_file, Config
-from genconf import gen_uuid, gen_short_id, gen_x25519
+from reality_vpn.cli.config import load_config_file, Config
+from reality_vpn.utils.genconf import gen_uuid, gen_short_id, gen_x25519
 
 
 
 
 def cmd_traffic():
     """Показать использование трафика."""
-    from vpnstats import stats
-    from vpntraffic import limiter
+    from reality_vpn.utils.stats import stats
+    from reality_vpn.utils.traffic import limiter
 
     stats.load()
     try:
@@ -42,7 +42,7 @@ def cmd_traffic():
     # Добавляем тех, кто в конфиге, но ещё не подключался
     for uid, name in limiter._uuid_to_name.items():
         if uid not in all_users:
-            from vpnstats import UserStat
+            from reality_vpn.utils.stats import UserStat
             us = UserStat(name, uid)
             all_users[uid] = us
 
@@ -64,7 +64,7 @@ def cmd_traffic():
 def cmd_version():
     """Показать версию сервера."""
     try:
-        from server import SERVER_VERSION, BUILD_DATE
+        from reality_vpn.server.server import SERVER_VERSION, BUILD_DATE
         print(f"VPN Server v{SERVER_VERSION} (build {BUILD_DATE})")
     except Exception:
         print("VPN Server (version unknown)")
@@ -209,7 +209,7 @@ def cmd_users_remove(uuid):
 
 def cmd_link(name=None, host=None, port=None):
     """Сгенерировать ссылку vless:// для пользователя."""
-    from linkgen import generate_link
+    from reality_vpn.utils.linkgen import generate_link
     try:
         cfg = load_config_file()
     except Exception as e:

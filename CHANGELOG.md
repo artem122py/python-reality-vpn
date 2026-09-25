@@ -2,49 +2,72 @@
 
 Все значимые изменения в проекте.
 
-## [1.0.1] — 2026-09-25
+Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
+
+## [2.0.0] — 2026-09-25
+
+**Большой релиз: новая структура пакета, SNI-routing, улучшенный UDP.**
 
 ### Added
-- Traffic limits per user (disabled by default, `traffic_limits_enabled`)
-- CLI commands: `traffic`, `users usage`, `version`
-- TCP keepalive + TCP_NODELAY on outgoing connections
-- SIGPIPE handling (no crash on write to closed socket)
-- Buffer size limit in `_SecureReader` (1 MB, memory-exhaustion protection)
-- `errors` counter in stats
-- Version info on server startup
+- **SNI-routing** — разные `dest` для разных SNI
+  - `sni_routes` в конфиге: `{"sni": "host:port"}`
+  - Поддержка wildcard: `*.example.com`
+  - Fallback на `dest` для неизвестных SNI
+- **Traffic limits** per user
+  - `traffic_limits_enabled` (по умолчанию `false`)
+  - `limit_bytes` на пользователя
+  - Команда `reality-vpn traffic`
+- **UDP-relay** — переписан
+  - Два таска (c2u, u2c) с корректной остановкой
+  - Раздельные таймауты (idle + payload)
+  - Счётчики пакетов/байт в лог
+- **CLI-команды**:
+  - `reality-vpn version`
+  - `reality-vpn traffic`
+  - `reality-vpn users usage`
+- **TCP keepalive** + **TCP_NODELAY** на исходящих соединениях
+- **SIGPIPE handling** — сервер не падает при write в закрытый сокет
+- **Ограничение буфера** в `_SecureReader` (1 MB)
+- **`errors` counter** в статистике
+- **Версия сервера** печатается при старте
+
+### Changed
+- **Структура проекта**: `src/reality_vpn/` с подпакетами:
+  - `core/` — TLS 1.3, Reality, SNI-routing
+  - `server/` — VLESS-сервер, UDP, Vision
+  - `cli/` — main, commands, config
+  - `utils/` — log, stats, guard, traffic, linkgen, genconf
+  - `tests/` — все тесты
+- **Установка как пакет**: `pip install -e .`
+- **Точка входа**: `reality-vpn` (консольная команда)
+- **Запуск через `python -m reality_vpn`**
+- **`main.py`** в корне — обёртка для обратной совместимости
+- **Docker/deploy** — в `deploy/`
+- **Примеры** — в `examples/`
 
 ### Fixed
-- Remove dummy NewSessionTicket (was breaking Happ)
-- `cmd_version` and `cmd_traffic` correctly registered in CLI
+- Убран dummy `NewSessionTicket` — ломал Happ
+- Исправлены все импорты после рефакторинга
+- `cmd_version` и `cmd_traffic` правильно зарегистрированы в CLI
 
 ### Removed
-- `testClientTLS.py` (outdated, not compatible with current REALITY)
+- `testClientTLS.py` — устаревший, несовместим с текущим Reality
+- `sni_routing.py` в корне (перемещён в `core/`)
 
-## [1.0.0] — 2026-09-25
+### Migration from 1.0.x
 
-Первый публичный релиз.
+**Новая структура**:
+- Файлы теперь в `src/reality_vpn/`
+- Импорты: `from server import` → `from reality_vpn.server.server import`
+- Установка: `pip install -e .`
 
-### Added
-- TLS 1.3 сервер с нуля (X25519 + HKDF-SHA256 + AES-128-GCM)
-- Xray-совместимый REALITY (HMAC-подпись, session_id, fallback)
-- VLESS TCP + UDP релей
-- Anti-replay кэш session_id
-- Rate limiting с автобаном IP
-- Мультиюзер (несколько UUID и short_id)
-- Статистика (uptime, соединения, трафик)
-- Модуль логирования с уровнями и ротацией
-- Генератор `vless://` ссылок + QR-код
-- CLI команды: `status`, `stop`, `users`, `link`
-- Graceful shutdown (SIGINT/SIGTERM)
-- Тесты (pytest)
-- GitHub Actions CI
-- Docker поддержка
-- README на русском и английском
-
-### Verified
-- Happ (Android)
-- NekoBox (Android)
-- v2rayNG (Android)
-- Termux (Android)
-- Debian/Ubuntu (VPS)
-- Raspberry Pi 5
+**Конфиг** (без изменений в API):
+```json
+{
+  "dest": "ya.ru:443",
+  "sni_routes": {
+    "www.microsoft.com": "www.microsoft.com:443",
+    "www.google.com": "www.google.com:443"
+  },
+  "traffic_limits_enabled": false
+}

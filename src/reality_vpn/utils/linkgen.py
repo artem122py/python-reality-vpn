@@ -3,7 +3,7 @@ import sys
 import base64
 import urllib.parse
 
-from genconf import load_config
+from reality_vpn.utils.genconf import load_config
 
 
 def b64url_nopad(b):

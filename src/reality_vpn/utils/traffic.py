@@ -9,7 +9,7 @@
 
 0 в limit_bytes = без лимита.
 """
-from vpnlog import log
+from reality_vpn.utils.log import log
 
 
 class TrafficLimiter:

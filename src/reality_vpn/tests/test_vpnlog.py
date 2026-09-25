@@ -1,4 +1,4 @@
-from vpnlog import _Logger
+from reality_vpn.utils.log import _Logger
 
 
 def test_levels_order():

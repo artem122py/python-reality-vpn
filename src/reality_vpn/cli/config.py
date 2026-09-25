@@ -4,6 +4,9 @@ import json
 import os
 
 
+import os as _os
+PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+
 DEFAULTS = {
     "listen_port": 8443,
     "dest": "ya.ru:443",
@@ -20,7 +23,9 @@ DEFAULTS = {
 
 
 class Config:
-    def __init__(self, path="config.json"):
+    def __init__(self, path=None):
+        if path is None:
+            path = _os.path.join(PROJECT_ROOT, "config.json")
         self.path = path
         self.data = {}
 
@@ -59,6 +64,6 @@ class Config:
         return key in self.data
 
 
-def load_config_file(path="config.json"):
+def load_config_file(path=None):
     cfg = Config(path)
     return cfg.load()

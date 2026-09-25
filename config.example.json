@@ -35,5 +35,11 @@
       "short_id": "8899aabbccddeeff",
       "limit_bytes": 10737418240
     }
-  ]
+  ],
+  "sni_routes": {
+    "www.microsoft.com": "www.microsoft.com:443",
+    "www.google.com": "www.google.com:443",
+    "www.cloudflare.com": "www.cloudflare.com:443",
+    "*.example.com": "example.com:443"
+  }
 }

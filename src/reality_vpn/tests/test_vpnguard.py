@@ -1,5 +1,5 @@
 import time
-from vpnguard import RateLimiter
+from reality_vpn.utils.guard import RateLimiter
 
 
 def test_no_ban_below_limit():
