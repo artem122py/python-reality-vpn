@@ -1,5 +1,10 @@
 # Python Reality VPN
 
+[![Tests](https://github.com/artem122py/python-reality-vpn/actions/workflows/test.yml/badge.svg)](https://github.com/artem122py/python-reality-vpn/actions/workflows/test.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Termux%20%7C%20Linux%20%7C%20RPi-orange)]()
+
 A custom VPN server with **Xray-compatible REALITY**, written in pure Python.
 Built from scratch: our own TLS 1.3, our own Reality implementation, our own VLESS.
 
@@ -195,7 +200,6 @@ MIT — free to use, fork, and modify.
 
 - XTLS-Vision (padding for better obfuscation)
 - Multiple `dest` targets (SNI routing)
-- Web control panel
 - Mobile wrapper app
 
 ---

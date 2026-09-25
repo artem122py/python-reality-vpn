@@ -1,5 +1,10 @@
 # Python Reality VPN
 
+[![Tests](https://github.com/artem122py/python-reality-vpn/actions/workflows/test.yml/badge.svg)](https://github.com/artem122py/python-reality-vpn/actions/workflows/test.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Termux%20%7C%20Linux%20%7C%20RPi-orange)]()
+
 [English version](./README_ENG.md) | Русская версия
 
 Собственный VPN-сервер с **Xray-совместимым REALITY** на чистом Python.
@@ -191,7 +196,6 @@ MIT — используй, форкай, улучшай.
 
 - XTLS-Vision (padding) — для обфускации
 - Множественные dest (SNI-routing)
-- Веб-панель управления
 - Мобильное приложение-обёртка
 
 ---

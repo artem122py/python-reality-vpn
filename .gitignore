@@ -19,3 +19,5 @@ vpn.pid
 *.pid
 *.tar.gz
 *.zip
+webpanel.py
+webpanel.json
