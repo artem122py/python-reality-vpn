@@ -1,0 +1,17 @@
+{
+  "uuid": "00000000-0000-0000-0000-000000000000",
+  "private_key": "0000000000000000000000000000000000000000000000000000000000000000",
+  "public_key": "0000000000000000000000000000000000000000000000000000000000000000",
+  "short_id": "0000000000000000",
+  "dest": "ya.ru:443",
+  "listen_port": 8443,
+  "security": "reality",
+  "debug": false,
+  "log_file": "",
+  "maxTimeDiff": 120,
+  "replay_ttl": 300,
+  "clienthello_timeout": 5,
+  "handshake_timeout": 10,
+  "idle_timeout": 300,
+  "stats_interval": 60
+}

@@ -1,0 +1,21 @@
+# Секреты и конфиги
+config.json
+*.pem
+*.der
+vpn.log
+vpn.log.*
+cert_debug.der
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.vscode/
+.idea/
+
+# PID и временные
+vpn.pid
+*.pid
+*.tar.gz
+*.zip
