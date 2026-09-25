@@ -10,6 +10,57 @@ from genconf import gen_uuid, gen_short_id, gen_x25519
 
 
 
+def cmd_traffic():
+    """Показать использование трафика."""
+    from vpnstats import stats
+    from vpntraffic import limiter
+
+    stats.load()
+    try:
+        cfg = load_config_file()
+        stats.load_user_map(cfg)
+        limiter.load(cfg)
+    except Exception as e:
+        print(f"config error: {e}")
+        return
+
+    if not limiter.enabled:
+        print("traffic limits: DISABLED (traffic_limits_enabled = false)")
+        print()
+        print("=== per-user usage (без лимитов) ===")
+        print(stats.per_user_summary())
+        return
+
+    print("traffic limits: ENABLED")
+    print()
+
+    # Собираем всех известных пользователей
+    all_users = {}
+    for uid, us in stats.users.items():
+        all_users[uid] = us
+
+    # Добавляем тех, кто в конфиге, но ещё не подключался
+    for uid, name in limiter._uuid_to_name.items():
+        if uid not in all_users:
+            from vpnstats import UserStat
+            us = UserStat(name, uid)
+            all_users[uid] = us
+
+    print("=== per-user usage ===")
+    for uid, us in all_users.items():
+        limit = limiter._uuid_to_limit.get(uid, limiter.default_limit)
+        used = us.up + us.down
+        if limit > 0:
+            percent = used / limit * 100
+            bar_len = min(20, int(percent / 5))
+            bar = "█" * bar_len + "░" * (20 - bar_len)
+            status = " ❌BLOCKED" if percent >= 100 else ""
+            print(f"  {us.name:<16} [{bar}] {percent:5.1f}% "
+                  f"({limiter._fmt(used)} / {limiter._fmt(limit)}){status}")
+        else:
+            print(f"  {us.name:<16} (no limit) {limiter._fmt(used)}")
+
+
 def cmd_version():
     """Показать версию сервера."""
     try:
@@ -193,6 +244,8 @@ def cmd_users(args):
     action = args[0]
     if action == "list":
         cmd_users_list()
+    elif action == "usage":
+        cmd_traffic()
     elif action == "add":
         if len(args) < 2:
             print("usage: users add <name> [uuid] [short_id]")

@@ -19,5 +19,21 @@
   "vision_client_padding_max": 1111,
   "vision_server_padding_min": 111,
   "vision_server_padding_max": 1111,
-  "vision_debug": false
+  "vision_debug": false,
+  "traffic_limits_enabled": false,
+  "traffic_limit_default": 0,
+  "users": [
+    {
+      "name": "default",
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "short_id": "0011223344556677",
+      "limit_bytes": 0
+    },
+    {
+      "name": "friend",
+      "uuid": "00000000-0000-0000-0000-000000000002",
+      "short_id": "8899aabbccddeeff",
+      "limit_bytes": 10737418240
+    }
+  ]
 }
