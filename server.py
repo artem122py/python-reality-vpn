@@ -13,6 +13,15 @@ from vpnlog import log
 from linkgen import generate_link
 
 
+def is_local_ip(peer):
+    """True если peer — localhost (клиент на том же устройстве)."""
+    if not peer:
+        return False
+    ip = peer[0] if isinstance(peer, tuple) else peer
+    return ip in ("127.0.0.1", "::1", "localhost")
+
+
+
 
 VERSION = 0x00
 CMD_TCP = 0x01
@@ -27,8 +36,18 @@ class VlessServer:
     def __init__(self, cfg, addr):
         self.cfg = cfg
         self.addr = addr
-        self.uuid_bytes = uuidlib.UUID(cfg["uuid"]).bytes
         self.port = cfg.get("listen_port", 8443)
+        # мультиюзер
+        self.valid_uuids = set()
+        if cfg.get("uuid"):
+            self.valid_uuids.add(uuidlib.UUID(cfg["uuid"]).bytes)
+        if cfg.get("users"):
+            for u in cfg["users"]:
+                try:
+                    self.valid_uuids.add(uuidlib.UUID(u["uuid"]).bytes)
+                except Exception:
+                    pass
+        self.uuid_bytes = uuidlib.UUID(cfg["uuid"]).bytes if cfg.get("uuid") else None
         self.one_shot = False
         self._done = asyncio.Event()
 
@@ -57,8 +76,15 @@ class VlessServer:
 
         display_host = self._pick_display_host()
         try:
-            link = generate_link(self.cfg, display_host, self.port)
-            log.info(f"VLESS Link: {link}")
+            link_no = generate_link(self.cfg, display_host, self.port,
+                                    "vpn", with_vision=False)
+            log.info(f"VLESS Link (no vision): {link_no}")
+
+            # Ссылка с Vision — только если включён в конфиге
+            if self.cfg.get("use_vision", False):
+                link_vis = generate_link(self.cfg, display_host, self.port,
+                                         "vpn-vision", with_vision=True)
+                log.info(f"VLESS Link (vision):    {link_vis}")
         except Exception as e:
             log.warn(f"link generation failed: {e}")
 
@@ -74,11 +100,26 @@ class VlessServer:
                 await asyncio.sleep(0.3)
 
             log.info("[*] stopping...")
+
+            # 1. Закрываем listener (новые коннекты не принимаются)
+            server.close()
+
+            # 2. Отменяем serve_task — НЕ ждём его await,
+            #    иначе виснем на wait_closed, который ждёт активные соединения
             serve_task.cancel()
+
+            # 3. Отменяем все остальные задачи (активные handlers)
+            for task in asyncio.all_tasks():
+                if task is asyncio.current_task() or task is serve_task:
+                    continue
+                task.cancel()
+
+            # 4. Даём 1 сек на отмену, но не ждём бесконечно
             try:
-                await serve_task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(serve_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+
             log.info(f"[stats] final: {stats.summary()}")
 
 
@@ -122,16 +163,11 @@ class VlessServer:
         peer = writer.get_extra_info("peername")
         ip = peer[0] if peer else "?"
 
-        # Rate limiting
-        if guard.is_banned(ip):
-            log.info(f"{peer}: BANNED (rate limit)")
-            try: writer.close()
-            except Exception: pass
-            return
+        # localhost никогда не баним (это может быть сам клиент на телефоне)
+        is_local = ip in ("127.0.0.1", "::1", "localhost")
 
-        if guard.record_attempt(ip):
-            log.warn(f"{peer}: rate limit exceeded → banned for 5m")
-            stats.on_handshake_fail()
+        if not is_local and guard.is_banned(ip):
+            log.debug(f"{peer}: BANNED, closing")
             try: writer.close()
             except Exception: pass
             return
@@ -151,13 +187,17 @@ class VlessServer:
 
         hdr = await self._read_vless_header(reader)
         if hdr is None:
-            log.debug(f"{peer}: bad header")
+            pass  # bad header - шум
+            if not is_local_ip(peer):
+                guard.record_attempt(peer[0] if peer else "?")
             return
 
-        uuid_got, cmd, host, port = hdr
+        uuid_got, cmd, host, port, flow = hdr
 
-        if uuid_got != self.uuid_bytes:
+        if uuid_got not in self.valid_uuids:
             log.warn(f"{peer}: uuid mismatch")
+            if not is_local_ip(peer):
+                guard.record_attempt(peer[0] if peer else "?")
             return
 
         if cmd == CMD_UDP:
@@ -172,6 +212,18 @@ class VlessServer:
 
         writer.write(b"\x00\x00")
         await writer.drain()
+
+        # XTLS-Vision — включается ПОСЛЕ VLESS-заголовка
+        if flow == "xtls-rprx-vision" and self.cfg.get("use_vision", False):
+            try:
+                from vision import enable_vision_after_header
+                log.info("[vision] enabling for this session")
+                reader, writer = await enable_vision_after_header(
+                    reader, writer, uuid_got, self.cfg,
+                )
+            except Exception as e:
+                log.error(f"[vision] enable failed: {type(e).__name__}: {e}")
+
         log.info(f"{peer} -> {host}:{port}")
 
         try:
@@ -256,11 +308,33 @@ class VlessServer:
             return None
         uuid_got = first[1:17]
         opt_len = first[17]
+        addons = b""
         if opt_len > 0:
             try:
-                await reader.readexactly(opt_len)
+                addons = await reader.readexactly(opt_len)
             except asyncio.IncompleteReadError:
                 return None
+
+        # Диагностика: показать Addons
+        if opt_len > 0:
+            log.debug(f"[vless] Addons ({opt_len}): {addons[:40]!r}")
+        else:
+            log.debug("[vless] opt_len=0 (нет Addons)")
+
+        # Парсим Addons для flow
+        flow = ""
+        if addons and len(addons) >= 2:
+            # Простой парсер: ищем строку "xtls-rprx-vision"
+            try:
+                # В Xray Addons это protobuf, но flow обычно в виде строки
+                text = addons.decode("utf-8", errors="ignore")
+                if "xtls-rprx-vision" in text:
+                    flow = "xtls-rprx-vision"
+            except Exception:
+                pass
+        
+        # Сохраняем flow в reader для wrap_server
+        reader._vless_flow = flow
         try:
             rest = await reader.readexactly(4)
         except asyncio.IncompleteReadError:
@@ -291,10 +365,11 @@ class VlessServer:
         else:
             return None
 
-        return uuid_got, cmd, host, port
+        return uuid_got, cmd, host, port, flow
 
     async def _pipe(self, reader, writer):
         idle = self.cfg.get("idle_timeout", 300)
+        first_log = True
         try:
             while True:
                 try:
@@ -304,6 +379,9 @@ class VlessServer:
                     break
                 if not data:
                     break
+                if first_log:
+                    log.info(f"[pipe] first chunk: {len(data)} bytes → type(writer)={type(writer).__name__}")
+                    first_log = False
                 writer.write(data)
                 await writer.drain()
         except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):

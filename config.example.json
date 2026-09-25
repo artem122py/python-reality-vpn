@@ -13,5 +13,11 @@
   "clienthello_timeout": 5,
   "handshake_timeout": 10,
   "idle_timeout": 300,
-  "stats_interval": 60
+  "stats_interval": 60,
+  "use_vision": false,
+  "vision_client_padding_min": 111,
+  "vision_client_padding_max": 1111,
+  "vision_server_padding_min": 111,
+  "vision_server_padding_max": 1111,
+  "vision_debug": false
 }
