@@ -21,7 +21,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install cryptography kyber-py pytest pytest-asyncio
           pip install qrcode || true
-          pip install -e . || echo "pip install -e . failed, using local imports"
 
       - name: Run tests
         env:
