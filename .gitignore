@@ -1,10 +1,18 @@
-# Секреты и конфиги
+# Секреты
 config.json
 *.pem
 *.der
+cert_*.der
+webpanel.json
 vpn.log
 vpn.log.*
-cert_debug.der
+server.log
+stats.json
+
+# Тестовые/учебные файлы
+rsa_demo.py
+test_rsa*.py
+*_demo.py
 
 # Python
 __pycache__/
@@ -14,11 +22,8 @@ __pycache__/
 .vscode/
 .idea/
 
-# PID и временные
+# Мусор
 vpn.pid
 *.pid
 *.tar.gz
 *.zip
-webpanel.py
-webpanel.json
-stats.json
