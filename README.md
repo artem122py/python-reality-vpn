@@ -1,5 +1,7 @@
 # Python Reality VPN
 
+[English version](./README_ENG.md) | Русская версия
+
 Собственный VPN-сервер с **Xray-совместимым REALITY** на чистом Python.
 Написан с нуля: свой TLS 1.3, своя реализация Reality, свой VLESS.
 
