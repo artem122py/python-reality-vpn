@@ -79,7 +79,6 @@
     ├── reality_pq.py    — Reality-auth + anti-replay
     ├── linkgen.py       — генератор vless://
     ├── testClient.py    — тест VLESS
-    ├── testClientTLS.py — тест TLS 1.3
     └── config.example.json
 
 ---

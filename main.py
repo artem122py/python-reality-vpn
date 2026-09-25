@@ -85,7 +85,7 @@ def main():
     argv = sys.argv
 
     # Расширенные команды (без addr)
-    if len(argv) >= 2 and argv[1] in ("status", "stop", "users", "link"):
+    if len(argv) >= 2 and argv[1] in ("status", "stop", "users", "link", "stats"):
         cmd = argv[1]
         rest = argv[2:]
         from vpncli import cmd_status, cmd_stop, cmd_users, cmd_link
@@ -95,6 +95,9 @@ def main():
             cmd_stop()
         elif cmd == "users":
             cmd_users(rest)
+        elif cmd == "stats":
+            from vpncli import cmd_stats
+            cmd_stats()
         elif cmd == "link":
             # link [name] [host] [port]
             cmd_link(rest[0] if len(rest) > 0 else None,
@@ -106,11 +109,25 @@ def main():
     cfg = load_config(noconfig)
 
     if mode == "server":
+        # CLI-флаги поверх конфига
+        if "--vision" in argv:
+            cfg["use_vision"] = True
+            cfg["vision_debug"] = True
+            print("[*] Vision: ON (CLI)")
+        if "--no-vision" in argv:
+            cfg["use_vision"] = False
+            print("[*] Vision: OFF (CLI)")
+        if "--debug" in argv:
+            cfg["debug"] = True
+            print("[*] Debug: ON (CLI)")
+
         log.configure(
             debug=cfg.get("debug", False),
             log_file=cfg.get("log_file") or None,
         )
         print_addresses(addr)
+        print(f"[*] use_vision = {cfg.get('use_vision', False)}")
+
         try:
             srv = VlessServer(cfg, addr)
             if "--once" in argv:

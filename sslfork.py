@@ -509,12 +509,15 @@ async def _do_handshake(reader, writer, cfg, payload, raw_first, peer):
         server_app = _RecordCipher(s_ap_key, s_ap_iv)
 
         log.info("[sslfork] handshake ok")
-        return _make_secure_streams(reader, writer, client_app, server_app)
+
+        client_reader, client_writer = _make_secure_streams(
+            reader, writer, client_app, server_app
+        )
+
+        return client_reader, client_writer
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"[sslfork] handshake failed: {type(e).__name__}: {e}")
+        log.error(f"[sslfork] handshake failed: {type(e).__name__}: {e}")
         return None, None
 
 

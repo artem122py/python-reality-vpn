@@ -21,3 +21,4 @@ vpn.pid
 *.zip
 webpanel.py
 webpanel.json
+stats.json

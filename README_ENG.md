@@ -77,7 +77,6 @@ Import it into Happ, NekoBox, or v2rayNG.
     ├── reality_pq.py       — Reality-auth + anti-replay
     ├── linkgen.py          — vless:// link generator
     ├── testClient.py       — VLESS test client
-    ├── testClientTLS.py    — TLS 1.3 test client
     └── config.example.json
 
 ---

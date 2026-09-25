@@ -52,6 +52,10 @@ class VlessServer:
         self._done = asyncio.Event()
 
     async def run(self):
+        # Загружаем статистику
+        stats.load()
+        stats.load_user_map(self.cfg)
+        log.info(f"[stats] loaded: {len(stats.users)} user(s)")
         # Graceful shutdown через threading.Event
         # (loop.add_signal_handler НЕ работает в Termux/Android)
         import threading
@@ -121,6 +125,8 @@ class VlessServer:
                 pass
 
             log.info(f"[stats] final: {stats.summary()}")
+            log.info(f"[stats/users]\n{stats.per_user_summary()}")
+            stats.save(force=True)
 
 
     async def _stats_loop(self):
@@ -129,6 +135,8 @@ class VlessServer:
         while True:
             await asyncio.sleep(interval)
             log.info(f"[stats] {stats.summary()}")
+            log.info(f"[stats/users]\n{stats.per_user_summary()}")
+            stats.save()
             counter += 1
             if counter % 5 == 0:
                 try:
@@ -200,6 +208,9 @@ class VlessServer:
                 guard.record_attempt(peer[0] if peer else "?")
             return
 
+        # Per-user: отметить подключение
+        stats.on_user_connect(uuid_got)
+
         if cmd == CMD_UDP:
             await self._handle_udp(reader, writer, host, port, peer)
             return
@@ -233,8 +244,8 @@ class VlessServer:
             writer.close()
             return
 
-        t1 = asyncio.create_task(self._pipe(reader, remote_writer))
-        t2 = asyncio.create_task(self._pipe(remote_reader, writer))
+        t1 = asyncio.create_task(self._pipe(reader, remote_writer, "up", uuid_got))
+        t2 = asyncio.create_task(self._pipe(remote_reader, writer, "down", uuid_got))
         done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
         for t in pending:
             t.cancel()
@@ -367,9 +378,8 @@ class VlessServer:
 
         return uuid_got, cmd, host, port, flow
 
-    async def _pipe(self, reader, writer):
+    async def _pipe(self, reader, writer, direction="up", uuid_bytes=None):
         idle = self.cfg.get("idle_timeout", 300)
-        first_log = True
         try:
             while True:
                 try:
@@ -379,9 +389,11 @@ class VlessServer:
                     break
                 if not data:
                     break
-                if first_log:
-                    log.info(f"[pipe] first chunk: {len(data)} bytes → type(writer)={type(writer).__name__}")
-                    first_log = False
+                if uuid_bytes is not None:
+                    if direction == "up":
+                        stats.add_user_up(uuid_bytes, len(data))
+                    else:
+                        stats.add_user_down(uuid_bytes, len(data))
                 writer.write(data)
                 await writer.drain()
         except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):
