@@ -13,8 +13,6 @@ Works with real Xray clients: **Happ**, **NekoBox**, **v2rayNG**.
 
 ---
 
-> ⚠️ **Beta warning:** setting `use_vision = true` enables **XTLS-Vision**, which is **work in progress**. Implementation is **incomplete** — **does not work with Happ / NekoBox / v2rayNG**. **Do not enable** unless you're ready to debug. Keep `use_vision = false` for stable operation.
-
 ## Features
 
 - **TLS 1.3 from scratch** — custom handshake, key schedule, AEAD (X25519 + HKDF-SHA256 + AES-128-GCM)

@@ -3,7 +3,6 @@ import os
 import json
 import time
 import threading
-from collections import defaultdict
 
 
 import os as _os

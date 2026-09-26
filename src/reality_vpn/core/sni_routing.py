@@ -77,9 +77,3 @@ class SniRouter:
 
 def build_router_from_config(cfg):
     return SniRouter.from_config(cfg)
-
-
-def resolve_dest(cfg, sni):
-    """Короткий путь: сразу вернуть "host:port" для sni."""
-    router = build_router_from_config(cfg)
-    return router.resolve(sni)

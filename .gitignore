@@ -28,3 +28,4 @@ vpn.pid
 *.tar.gz
 *.zip
 check.sh
+server.log

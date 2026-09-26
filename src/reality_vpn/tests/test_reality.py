@@ -1,4 +1,3 @@
-import pytest
 from reality_vpn.core.reality import (
     _compute_auth_shared,
     derive_auth_key,

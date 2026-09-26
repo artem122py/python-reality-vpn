@@ -1,6 +1,5 @@
 # server.py
 import asyncio
-import os
 import signal
 import struct
 import socket
@@ -29,11 +28,48 @@ CMD_TCP = 0x01
 CMD_UDP = 0x02
 CMD_MUX = 0x03
 
-SERVER_VERSION = "2.0.0"
-BUILD_DATE = "2026-09-25"
+SERVER_VERSION = "2.1.0"
+BUILD_DATE = "2026-09-26"
 ATYP_IPV4 = 0x01
 ATYP_DOMAIN = 0x02
 ATYP_IPV6 = 0x03
+
+
+def _parse_vless_addons(addons: bytes) -> dict:
+    """Protobuf-парсер VLESS Addons. Поле flow — строка xtls-*."""
+    out = {"flow": "", "seed": b""}
+    i = 0
+    n = len(addons)
+    while i < n:
+        tag = addons[i]; i += 1
+        wire = tag & 0x07
+        if wire == 0:
+            while i < n and (addons[i] & 0x80):
+                i += 1
+            i += 1
+            continue
+        if wire != 2:
+            break
+        ln = addons[i]; i += 1
+        if ln & 0x80:
+            shift = 7
+            ln &= 0x7f
+            while i < n:
+                b = addons[i]; i += 1
+                ln |= (b & 0x7f) << shift
+                if not (b & 0x80):
+                    break
+                shift += 7
+        if i + ln > n:
+            break
+        val = addons[i:i+ln]; i += ln
+        try:
+            txt = val.decode("ascii")
+        except Exception:
+            continue
+        if txt.startswith("xtls-"):
+            out["flow"] = txt
+    return out
 
 
 class VlessServer:
@@ -62,14 +98,6 @@ class VlessServer:
         except (AttributeError, ValueError):
             pass  # Windows или не-главный поток
 
-        # Предупреждение о beta-фиче Vision
-        if self.cfg.get("use_vision", False):
-            log.warn("=" * 60)
-            log.warn("ВНИМАНИЕ: use_vision = True")
-            log.warn("XTLS-Vision — BETA. НЕ работает с Happ/NekoBox.")
-            log.warn("Используйте ссылку БЕЗ flow=xtls-rprx-vision.")
-            log.warn("Если VPN не работает — установите use_vision = False")
-            log.warn("=" * 60)
 
         # Загружаем статистику
         stats.load()
@@ -223,7 +251,11 @@ class VlessServer:
                 guard.record_attempt(peer[0] if peer else "?")
             return
 
-        uuid_got, cmd, host, port, flow = hdr
+        if len(hdr) == 6:
+            uuid_got, cmd, host, port, flow, xudp_frame = hdr
+        else:
+            uuid_got, cmd, host, port, flow = hdr
+            xudp_frame = None
 
         if uuid_got not in self.valid_uuids:
             log.warn(f"{peer}: uuid mismatch")
@@ -240,7 +272,9 @@ class VlessServer:
         stats.on_user_connect(uuid_got)
 
         if cmd == CMD_UDP:
-            await self._handle_udp(reader, writer, host, port, peer)
+            await self._handle_udp(reader, writer, host, port, peer,
+                                    uuid_got=uuid_got,
+                                    initial_frame=xudp_frame)
             return
         if cmd == CMD_MUX:
             log.debug(f"{peer}: Mux not implemented")
@@ -249,20 +283,21 @@ class VlessServer:
             log.debug(f"{peer}: unknown command {cmd}")
             return
 
-        writer.write(b"\x00\x00")
-        await writer.drain()
-
-        # XTLS-Vision — включается ПОСЛЕ VLESS-заголовка
+        # XTLS-Vision — включаем ДО VLESS-ответа
         if flow == "xtls-rprx-vision" and self.cfg.get("use_vision", False):
             try:
                 from reality_vpn.server.vision import enable_vision_after_header
-                log.info("[vision] enabling for this session")
+                log.info(f"[vision] enabling (flow={flow!r})")
                 reader, writer = await enable_vision_after_header(
                     reader, writer, uuid_got, self.cfg,
                 )
             except Exception as e:
                 log.error(f"[vision] enable failed: {type(e).__name__}: {e}")
 
+        writer.write(b"\x00\x00")
+        await writer.drain()
+
+        # XTLS-Vision — включается ПОСЛЕ VLESS-заголовка
         log.info(f"{peer} -> {host}:{port}")
 
         try:
@@ -306,169 +341,162 @@ class VlessServer:
             except Exception: pass
         log.info(f"{peer} done")
 
-    async def _handle_udp(self, reader, writer, host, port, peer):
+    async def _handle_udp(self, reader, writer, host, port, peer,
+                          uuid_got=None, initial_frame=None):
+        """XUDP-обработчик: один фрейм → один UDP-запрос → ответ.
+
+        Happ использует XUDP через одноразовые TCP-соединения,
+        поэтому отвечаем СИНХРОННО на каждый фрейм.
         """
-        UDP-релей. VLESS UDP:
-          [len(2)][payload] от клиента
-          [len(2)][payload] клиенту
-        Один target на соединение.
-        """
+        if initial_frame is None:
+            return await self._handle_udp_legacy(reader, writer, host, port, peer)
+
         loop = asyncio.get_event_loop()
+        sessions = {}  # id -> (sock, host, port)
+        stop = asyncio.Event()
 
-        # Разрешаем хост
-        try:
-            infos = await loop.getaddrinfo(host, port,
-                                            type=socket.SOCK_DGRAM)
-            if not infos:
-                log.warn(f"[udp] {peer}: no addrinfo for {host}:{port}")
+        async def send_udp(frame):
+            mux_id = frame["id"]
+            sess = sessions.get(mux_id)
+            if sess is None:
+                try:
+                    infos = await loop.getaddrinfo(
+                        frame["host"], frame["port"],
+                        type=socket.SOCK_DGRAM)
+                    fam, _, _, _, sa = infos[0]
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.setblocking(False)
+                    sock.connect(sa)
+                    sess = (sock, frame["host"], frame["port"])
+                    sessions[mux_id] = sess
+                except Exception as e:
+                    log.debug(f"[udp] id={mux_id} resolve fail: {e}")
+                    return
+            sock, fhost, fport = sess
+            try:
+                await loop.sock_sendall(sock, frame["data"])
+            except Exception as e:
+                log.debug(f"[udp] id={mux_id} send fail: {e}")
+
+        async def recv_and_reply(mux_id):
+            sess = sessions.get(mux_id)
+            if sess is None:
                 return
-            family, _, _, _, sockaddr = infos[0]
-        except Exception as e:
-            log.warn(f"[udp] {peer}: resolve failed {host}:{port}: {e}")
-            return
+            sock, fhost, fport = sess
+            try:
+                data = await asyncio.wait_for(
+                    loop.sock_recv(sock, 65536), timeout=2.0)
+            except asyncio.TimeoutError:
+                log.debug(f"[udp] id={mux_id} recv timeout")
+                return
+            except Exception as e:
+                log.debug(f"[udp] id={mux_id} recv fail: {e}")
+                return
+            if not data:
+                return
+            try:
+                pkt = self._build_xudp_frame(
+                    uuid_got, mux_id, fhost, fport, data)
+                writer.write(pkt)
+                await writer.drain()
+            except Exception as e:
+                log.debug(f"[udp] id={mux_id} reply fail: {e}")
 
-        # Открываем UDP-сокет
-        udp_sock = socket.socket(family, socket.SOCK_DGRAM)
-        udp_sock.setblocking(False)
+        async def process_frame(frame):
+            await send_udp(frame)
+            await recv_and_reply(frame["id"])
+
+        async def reader_loop():
+            # Первый фрейм
+            try:
+                await process_frame(initial_frame)
+            except Exception as e:
+                log.warn(f"[udp] initial frame: {e}")
+            # Дальше
+            while not stop.is_set():
+                try:
+                    frame = await self._read_xudp_from_reader(reader)
+                except Exception as e:
+                    log.warn(f"[udp] reader exc: {type(e).__name__}: {e}")
+                    break
+                if frame is None:
+                    break
+                try:
+                    await process_frame(frame)
+                except Exception as e:
+                    log.warn(f"[udp] process exc: {e}")
+                    break
+            stop.set()
+
+        await reader_loop()
+
+        # Закрываем сокеты
+        for sess in sessions.values():
+            try: sess[0].close()
+            except Exception: pass
+
+    async def _handle_udp_legacy(self, reader, writer, host, port, peer):
+        """Старый VLESS UDP (без XUDP): [len(2)][payload]."""
+        loop = asyncio.get_event_loop()
         try:
+            infos = await loop.getaddrinfo(host, port, type=socket.SOCK_DGRAM)
+            family, _, _, _, sockaddr = infos[0]
+            udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_sock.setblocking(False)
             udp_sock.connect(sockaddr)
         except Exception as e:
-            log.warn(f"[udp] {peer}: connect failed: {e}")
-            udp_sock.close()
+            log.debug(f"[udp] legacy resolve fail: {e}")
             return
-
-        # Отвечаем VLESS-заголовком
         try:
             writer.write(b"\x00\x00")
             await writer.drain()
-        except Exception:
-            udp_sock.close()
-            return
+            stop = asyncio.Event()
+            idle = self.cfg.get("idle_timeout", 300)
 
-        # Счётчики
-        pkts_in = 0
-        pkts_out = 0
-        bytes_in = 0
-        bytes_out = 0
-        idle = self.cfg.get("idle_timeout", 300)
-
-        # Флаг для остановки
-        stop = asyncio.Event()
-
-        async def client_to_udp():
-            """client → UDP-сокет"""
-            nonlocal pkts_in, bytes_in
-            try:
+            async def c2u():
                 while not stop.is_set():
-                    # Читаем 2 байта длины
                     try:
-                        hdr = await asyncio.wait_for(
-                            reader.readexactly(2), timeout=idle
-                        )
-                    except asyncio.TimeoutError:
-                        log.debug(f"[udp] {peer}: idle timeout (client)")
-                        break
-                    except asyncio.IncompleteReadError:
-                        log.debug(f"[udp] {peer}: client closed")
-                        break
-
-                    plen = struct.unpack(">H", hdr)[0]
-                    if plen == 0:
-                        continue
-
-                    try:
-                        payload = await asyncio.wait_for(
-                            reader.readexactly(plen), timeout=5
-                        )
-                    except (asyncio.TimeoutError, asyncio.IncompleteReadError):
-                        log.debug(f"[udp] {peer}: incomplete payload")
-                        break
-
-                    # Отправляем в UDP
-                    try:
+                        hdr = await asyncio.wait_for(reader.readexactly(2), timeout=idle)
+                        plen = struct.unpack(">H", hdr)[0]
+                        payload = await asyncio.wait_for(reader.readexactly(plen), timeout=5)
                         await loop.sock_sendall(udp_sock, payload)
-                        pkts_in += 1
-                        bytes_in += len(payload)
-                    except Exception as e:
-                        log.debug(f"[udp] {peer}: send failed: {e}")
+                    except Exception:
                         break
-            except Exception as e:
-                log.debug(f"[udp] {peer}: c2u error: {e}")
-            finally:
                 stop.set()
 
-        async def udp_to_client():
-            """UDP-сокет → client"""
-            nonlocal pkts_out, bytes_out
-            try:
+            async def u2c():
                 while not stop.is_set():
                     try:
-                        data = await asyncio.wait_for(
-                            loop.sock_recv(udp_sock, 65536),
-                            timeout=idle,
-                        )
-                    except asyncio.TimeoutError:
-                        log.debug(f"[udp] {peer}: idle timeout (udp)")
-                        break
-                    except Exception as e:
-                        log.debug(f"[udp] {peer}: udp recv error: {e}")
-                        break
-
-                    if not data:
-                        break
-
-                    # Отправляем клиенту: [len(2)][payload]
-                    try:
+                        data = await asyncio.wait_for(loop.sock_recv(udp_sock, 65536), timeout=idle)
                         writer.write(struct.pack(">H", len(data)) + data)
                         await writer.drain()
-                        pkts_out += 1
-                        bytes_out += len(data)
-                    except Exception as e:
-                        log.debug(f"[udp] {peer}: client write failed: {e}")
+                    except Exception:
                         break
-            except Exception as e:
-                log.debug(f"[udp] {peer}: u2c error: {e}")
-            finally:
                 stop.set()
 
-        try:
-            t1 = asyncio.create_task(client_to_udp())
-            t2 = asyncio.create_task(udp_to_client())
-
-            await asyncio.wait([t1, t2],
-                               return_when=asyncio.FIRST_COMPLETED)
-
+            t1 = asyncio.create_task(c2u())
+            t2 = asyncio.create_task(u2c())
+            await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
             for t in (t1, t2):
-                if not t.done():
-                    t.cancel()
-                    try:
-                        await t
-                    except asyncio.CancelledError:
-                        pass
-
-            log.info(f"[udp] {peer} -> {host}:{port} closed: "
-                     f"{pkts_in}/{pkts_out} pkts, "
-                     f"{bytes_in}/{bytes_out} bytes")
+                t.cancel()
         finally:
-            try:
-                udp_sock.close()
-            except Exception:
-                pass
-            try:
-                writer.close()
-            except Exception:
-                pass
+            try: udp_sock.close()
+            except Exception: pass
 
     async def _read_vless_header(self, reader):
         try:
             first = await reader.readexactly(18)
         except asyncio.IncompleteReadError:
+            log.debug("[vless] HEADER FAIL: readexactly(18) incomplete")
             return None
+
+
         version = first[0]
         if version != VERSION:
             return None
         uuid_got = first[1:17]
         opt_len = first[17]
+
         addons = b""
         if opt_len > 0:
             try:
@@ -476,33 +504,30 @@ class VlessServer:
             except asyncio.IncompleteReadError:
                 return None
 
-        # Диагностика: показать Addons
         if opt_len > 0:
             log.debug(f"[vless] Addons ({opt_len}): {addons[:40]!r}")
         else:
             log.debug("[vless] opt_len=0 (нет Addons)")
 
-        # Парсим Addons для flow
         flow = ""
         if addons and len(addons) >= 2:
-            # Простой парсер: ищем строку "xtls-rprx-vision"
             try:
-                # В Xray Addons это protobuf, но flow обычно в виде строки
-                text = addons.decode("utf-8", errors="ignore")
-                if "xtls-rprx-vision" in text:
-                    flow = "xtls-rprx-vision"
-            except Exception:
-                pass
-        
-        # Сохраняем flow в reader для wrap_server
-        reader._vless_flow = flow
+                flow = _parse_vless_addons(addons).get("flow", "")
+            except Exception as e:
+                log.debug(f"[vless] addons parse error: {e}")
+
         try:
             rest = await reader.readexactly(4)
         except asyncio.IncompleteReadError:
             return None
+
         cmd = rest[0]
         port = struct.unpack(">H", rest[1:3])[0]
         atyp = rest[3]
+
+        # ---- XUDP / Mux.Cool (cmd=0x03) ----
+        if cmd == 0x03:
+            return await self._read_xudp_frame(reader, uuid_got, flow, rest)
 
         if atyp == ATYP_IPV4:
             try:
@@ -526,7 +551,134 @@ class VlessServer:
         else:
             return None
 
-        return uuid_got, cmd, host, port, flow
+        return uuid_got, cmd, host, port, flow, None
+
+    def _build_xudp_frame(self, uuid_bytes, mux_id, host, port, udp_payload):
+        """Ответный XUDP-фрейм (Keep, без GID).
+
+        [ID:2][Status:0x02][Opt:0x01][N:0x02][Port:2][T:1][Addr][len:2][Data]
+        """
+        inner = bytearray()
+        inner += struct.pack(">H", mux_id)
+        inner.append(0x02)   # Status = Keep
+        inner.append(0x01)   # Opt = Data
+        inner.append(0x02)   # N = UDP
+        inner += struct.pack(">H", port)
+        try:
+            ip = socket.inet_aton(host)
+            inner.append(0x01)
+            inner += ip
+        except OSError:
+            hb = host.encode("ascii")
+            inner.append(0x02)
+            inner.append(len(hb))
+            inner += hb
+        inner += struct.pack(">H", len(udp_payload))
+        inner += udp_payload
+
+        pkt = bytearray()
+        pkt += uuid_bytes[:16]
+        pkt.append(0x00)
+        pkt += struct.pack(">H", len(inner))
+        pkt += struct.pack(">H", 0)
+        pkt += inner
+        return bytes(pkt)
+
+    async def _read_xudp_frame(self, reader, uuid_got, flow, rest):
+        """XUDP-фрейм от Happ (Vision-конверт внутри cmd=0x03).
+
+        Формат data (после Vision-разбора):
+          [ID:2][reserved:5 = 00 00 01 01 02][port:2][T:1][addr]
+          [GlobalID:8 — только для New]
+          [len:2][udp_payload len]
+        """
+        try:
+            # Дочитываем остаток UUID (13) + Vision cmd(1) + clen(2) + plen(2) = 18
+            more = await reader.readexactly(18)
+            uuid_full = bytes(rest[1:4]) + bytes(more[0:13])
+            inner_cmd = more[13]
+            inner_clen = struct.unpack(">H", more[14:16])[0]
+            inner_plen = struct.unpack(">H", more[16:18])[0]
+
+            payload = await reader.readexactly(inner_clen)
+            if inner_plen > 0:
+                await reader.readexactly(inner_plen)
+
+            # Проверим, что data начинается с [00 XX 00 00 01 01 02]
+            if len(payload) < 10:
+                log.warn(f"[mux] data too short: {payload.hex()}")
+                return None
+
+            # Парсим XUDP-фрейм
+            frame = self._parse_xudp_data(payload)
+            if frame is None:
+                return None
+
+
+            # Возвращаем: cmd=0x02 (UDP), host, port, и в data кладём UDP-payload
+            # Но _handle_udp ожидает [len(2)][payload] — обернём
+            return uuid_got, 0x02, frame["host"], frame["port"], flow, frame
+
+        except asyncio.IncompleteReadError:
+            log.debug("[mux] readexactly incomplete")
+            return None
+
+    def _parse_xudp_data(self, data: bytes):
+        """Разбор XUDP data.
+
+        [ID:2][00 00 01 01 02:5][port:2][T:1][addr...][GlobalID:8?][len:2][payload]
+        """
+        try:
+            pos = 0
+            mux_id = struct.unpack(">H", data[pos:pos+2])[0]; pos += 2
+            # 5 байт reserved: 00 00 01 01 02
+            reserved = data[pos:pos+5]; pos += 5
+            if reserved != b"\x00\x00\x01\x01\x02":
+                log.warn(f"[mux] reserved mismatch: {reserved.hex()}")
+                # всё равно продолжаем
+            port = struct.unpack(">H", data[pos:pos+2])[0]; pos += 2
+            t = data[pos]; pos += 1
+
+            if t == 0x01:
+                addr = data[pos:pos+4]; pos += 4
+                host = socket.inet_ntoa(addr)
+            elif t == 0x02:
+                dlen = data[pos]; pos += 1
+                addr = data[pos:pos+dlen]; pos += dlen
+                host = addr.decode("ascii", "replace")
+            elif t == 0x03:
+                addr = data[pos:pos+16]; pos += 16
+                host = socket.inet_ntop(socket.AF_INET6, addr)
+            else:
+                log.warn(f"[mux] unknown T=0x{t:02x}")
+                return None
+
+            # Попробуем определить, есть ли GlobalID.
+            # Если после addr идут 8 случайных байт, потом len — New.
+            # Если сразу len (2 байта, старший = 0x00) — Keep.
+            gid = None
+            if pos + 10 <= len(data):
+                maybe_len_new = struct.unpack(">H", data[pos+8:pos+10])[0]
+                maybe_len_keep = struct.unpack(">H", data[pos:pos+2])[0]
+                # Эвристика: если keep-len совпадает с оставшейся длиной → Keep
+                if maybe_len_keep == len(data) - pos - 2:
+                    gid = None
+                elif maybe_len_new == len(data) - pos - 10:
+                    gid = data[pos:pos+8]; pos += 8
+                else:
+                    # По умолчанию — New
+                    gid = data[pos:pos+8]; pos += 8
+            else:
+                gid = data[pos:pos+8]; pos += 8
+
+            dlen = struct.unpack(">H", data[pos:pos+2])[0]; pos += 2
+            payload = data[pos:pos+dlen]
+
+            return {"id": mux_id, "host": host, "port": port, "t": t,
+                    "gid": gid, "data": payload}
+        except Exception as e:
+            log.debug(f"[mux] parse error: {type(e).__name__}: {e}")
+            return None
 
     async def _pipe(self, reader, writer, direction="up", uuid_bytes=None):
         idle = self.cfg.get("idle_timeout", 300)

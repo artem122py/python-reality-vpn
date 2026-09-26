@@ -6,20 +6,19 @@
   "dest": "ya.ru:443",
   "listen_port": 8443,
   "security": "reality",
-  "debug": false,
-  "log_file": "",
-  "maxTimeDiff": 120,
-  "replay_ttl": 300,
   "clienthello_timeout": 5,
   "handshake_timeout": 10,
   "idle_timeout": 300,
-  "stats_interval": 60,
+  "maxTimeDiff": 120,
+  "replay_ttl": 300,
   "use_vision": false,
-  "vision_client_padding_min": 111,
-  "vision_client_padding_max": 1111,
-  "vision_server_padding_min": 111,
-  "vision_server_padding_max": 1111,
-  "vision_debug": false,
+  "sni_routes": {
+    "www.microsoft.com": "www.microsoft.com:443",
+    "www.google.com": "www.google.com:443"
+  },
+  "debug": false,
+  "log_file": "",
+  "stats_interval": 60,
   "traffic_limits_enabled": false,
   "traffic_limit_default": 0,
   "users": [
@@ -28,18 +27,6 @@
       "uuid": "00000000-0000-0000-0000-000000000001",
       "short_id": "0011223344556677",
       "limit_bytes": 0
-    },
-    {
-      "name": "friend",
-      "uuid": "00000000-0000-0000-0000-000000000002",
-      "short_id": "8899aabbccddeeff",
-      "limit_bytes": 10737418240
     }
-  ],
-  "sni_routes": {
-    "www.microsoft.com": "www.microsoft.com:443",
-    "www.google.com": "www.google.com:443",
-    "www.cloudflare.com": "www.cloudflare.com:443",
-    "*.example.com": "example.com:443"
-  }
+  ]
 }

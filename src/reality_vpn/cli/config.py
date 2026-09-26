@@ -8,17 +8,22 @@ import os as _os
 PROJECT_ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
 DEFAULTS = {
-    "listen_port": 8443,
     "dest": "ya.ru:443",
+    "listen_port": 8443,
     "security": "reality",
-    "debug": False,
-    "log_file": "",
-    "maxTimeDiff": 120,
-    "replay_ttl": 300,
     "clienthello_timeout": 5,
     "handshake_timeout": 10,
     "idle_timeout": 300,
+    "maxTimeDiff": 120,
+    "replay_ttl": 300,
+    "use_vision": False,
+    "sni_routes": {},
+    "debug": False,
+    "log_file": "",
     "stats_interval": 60,
+    "traffic_limits_enabled": False,
+    "traffic_limit_default": 0,
+    "users": [],
 }
 
 

@@ -5,7 +5,7 @@ import sys
 import json
 import signal
 from reality_vpn.cli.config import load_config_file, Config
-from reality_vpn.utils.genconf import gen_uuid, gen_short_id, gen_x25519
+from reality_vpn.utils.genconf import gen_uuid, gen_short_id
 
 
 

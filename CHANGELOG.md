@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.1.0] — 2026-09-26
+
+**XUDP (Xray UDP over Mux) и очистка от отладочного кода.**
+
+### Added
+- **XUDP-обработчик** (`cmd=0x03`): теперь сервер принимает UDP-фреймы
+  от Happ/XTLS-клиентов и проксирует их через UDP-сокет
+  - Парсинг XUDP-фреймов (New/Keep) внутри Vision-конверта
+  - Поддержка Keep-ответов (`Status=0x02`)
+  - Поддержка Vision-Vision wrapper (`uuid + cmd + clen + plen`)
+- **Автоопределение формата XUDP** (Keep без GlobalID)
+- **`_handle_udp_legacy`** — старый VLESS UDP `[len(2)][payload]` как fallback
+
+### Changed
+- Все отладочные `log.info` / `log.warn` для Vision/XUDP/pipe понижены до `log.debug`
+- Убраны диагностические hex-дампы (они включаются при `debug = true`)
+- Версия поднята до 2.1.0
+
+### Fixed
+- `enable_vision_after_header` вызывается **до** VLESS-ответа (а не после)
+- `_SecureReader.buf` корректно читается для leftover
+- Паддинг VLESS-ответа больше не обнуляется
+- `flow=xtls-rprx-vision` обрабатывается корректно (protobuf-парсер Addons)
+
 Все значимые изменения в проекте.
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).

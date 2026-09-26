@@ -1,7 +1,6 @@
 # src/reality_vpn/cli/main.py
 """CLI точка входа для reality-vpn."""
 import sys
-import os
 import socket
 import struct
 import fcntl
@@ -142,16 +141,6 @@ def main():
         )
         print_addresses(addr)
         print(f"[*] use_vision = {cfg.get('use_vision', False)}")
-
-        if cfg.get("use_vision", False):
-            print()
-            print("=" * 60)
-            print("  ⚠️  ВНИМАНИЕ: use_vision = True")
-            print("  XTLS-Vision находится в BETA-состоянии.")
-            print("  Реализация неполная и НЕ работает с Happ/NekoBox.")
-            print("  Используйте ссылку БЕЗ flow=xtls-rprx-vision.")
-            print("=" * 60)
-            print()
 
         try:
             srv = VlessServer(cfg, addr)

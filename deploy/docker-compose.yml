@@ -9,5 +9,5 @@ services:
       - "8443:8443/udp"
     volumes:
       - ../config.json:/data/config.json
-      - ../vpn.log:/data/vpn.log
+      - ../server.log:/data/server.log
     restart: unless-stopped

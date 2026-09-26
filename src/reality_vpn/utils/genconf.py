@@ -33,23 +33,53 @@ def gen_x25519():
 
 
 def gen_config():
+    """Сгенерировать канонический config.json для 2.1.0."""
     print("Config not found, generating...")
     priv, pub = gen_x25519()
     cfg = {
+        # обязательные
         "uuid": gen_uuid(),
         "private_key": priv.hex(),
         "public_key": pub.hex(),
         "short_id": gen_short_id(),
+
+        # основное
         "dest": "ya.ru:443",
         "listen_port": 8443,
         "security": "reality",
-        "reality_enabled": True,
+
+        # тайминги
+        "clienthello_timeout": 5,
+        "handshake_timeout": 10,
+        "idle_timeout": 300,
+        "maxTimeDiff": 120,
+        "replay_ttl": 300,
+
+        # XTLS-Vision (BETA, off by default)
+        "use_vision": False,
+
+        # SNI-routing
+        "sni_routes": {},
+
+        # логи
+        "debug": False,
+        "log_file": "",
+        "stats_interval": 60,
+
+        # лимиты трафика
+        "traffic_limits_enabled": False,
+        "traffic_limit_default": 0,
+
+        # single-user (пустой список)
+        "users": [],
     }
     save_config(cfg)
     print(f"Config written to {CONFIG_PATH}")
     print(f"  uuid       = {cfg['uuid']}")
     print(f"  public_key = {cfg['public_key']}")
     print(f"  short_id   = {cfg['short_id']}")
+    print(f"  dest       = {cfg['dest']}")
+    print(f"  use_vision = {cfg['use_vision']}")
     return cfg
 
 

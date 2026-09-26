@@ -1,7 +1,5 @@
 # reality_pq.py
 """X25519MLKEM768 + Xray REALITY helpers."""
-import hashlib
-import hmac
 import struct
 import time
 

@@ -1,6 +1,4 @@
 import json
-import os
-import tempfile
 import pytest
 from reality_vpn.cli.config import Config, DEFAULTS
 

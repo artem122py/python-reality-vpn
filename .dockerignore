@@ -5,3 +5,5 @@ __pycache__/
 .git/
 tests/
 *.tar.gz
+stats.json
+*.pyc
