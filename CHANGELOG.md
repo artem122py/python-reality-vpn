@@ -1,32 +1,47 @@
 # Changelog
 
-## [2.1.0] — 2026-09-26
-
-**XUDP (Xray UDP over Mux) и очистка от отладочного кода.**
-
-### Added
-- **XUDP-обработчик** (`cmd=0x03`): теперь сервер принимает UDP-фреймы
-  от Happ/XTLS-клиентов и проксирует их через UDP-сокет
-  - Парсинг XUDP-фреймов (New/Keep) внутри Vision-конверта
-  - Поддержка Keep-ответов (`Status=0x02`)
-  - Поддержка Vision-Vision wrapper (`uuid + cmd + clen + plen`)
-- **Автоопределение формата XUDP** (Keep без GlobalID)
-- **`_handle_udp_legacy`** — старый VLESS UDP `[len(2)][payload]` как fallback
-
-### Changed
-- Все отладочные `log.info` / `log.warn` для Vision/XUDP/pipe понижены до `log.debug`
-- Убраны диагностические hex-дампы (они включаются при `debug = true`)
-- Версия поднята до 2.1.0
-
-### Fixed
-- `enable_vision_after_header` вызывается **до** VLESS-ответа (а не после)
-- `_SecureReader.buf` корректно читается для leftover
-- Паддинг VLESS-ответа больше не обнуляется
-- `flow=xtls-rprx-vision` обрабатывается корректно (protobuf-парсер Addons)
-
 Все значимые изменения в проекте.
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
+
+## [2.1.0] — 2026-09-26
+
+**XTLS-Vision, XUDP, SNI-routing, чистые логи.**
+
+### Added
+- **XTLS-Vision** — padding-обфускация для TLS-in-TLS
+  - Protobuf-парсер VLESS Addons (`_parse_vless_addons`)
+  - Vision включается **до** VLESS-ответа
+- **XUDP (UDP over Mux)** — `cmd=0x03` с Vision-конвертом
+  - Парсинг XUDP-фреймов (New/Keep)
+  - UDP-релей через `_handle_udp`
+  - Fallback на legacy VLESS UDP `[len(2)][payload]`
+- **setup.sh** — автоустановка для Termux / Debian / Ubuntu / RPi
+- **FAQ** в README (RU + EN)
+
+### Changed
+- Версия **2.1.0**
+- Все диагностические логи → `log.debug`
+- Канонический `config.json` (убраны `vision_*_padding_*`, `vision_debug`, `reality_enabled`)
+- `qrcode` → опциональная зависимость
+- Docker compose: `server.log` вместо `vpn.log`
+- README переписан, добавлены XUDP, Vision, SNI-routing, FAQ
+
+### Removed
+- `release.sh` (жёстко привязан к Termux)
+- `server.log` из git
+- `tests/` в корне (дубликат `src/reality_vpn/tests/`)
+- Неиспользуемые импорты (`hashlib`, `hmac`, `defaultdict`, `time`, `os`, `tempfile`, `pytest`, `sys`)
+- Неиспользуемая функция `resolve_dest` в `sni_routing.py`
+- BETA-предупреждения из кода и README
+
+### Fixed
+- `enable_vision_after_header` вызывается **до** VLESS-ответа
+- `_SecureReader.buf` корректно читается для leftover
+- Паддинг VLESS-ответа больше не обнуляется
+- Тесты обновлены под 6-tuple `_read_vless_header`
+
+---
 
 ## [2.0.0] — 2026-09-25
 
@@ -78,20 +93,33 @@
 - `testClientTLS.py` — устаревший, несовместим с текущим Reality
 - `sni_routing.py` в корне (перемещён в `core/`)
 
-### Migration from 1.0.x
+---
 
-**Новая структура**:
-- Файлы теперь в `src/reality_vpn/`
-- Импорты: `from server import` → `from reality_vpn.server.server import`
-- Установка: `pip install -e .`
+## [1.0.0] — 2026-09-25
 
-**Конфиг** (без изменений в API):
-```json
-{
-  "dest": "ya.ru:443",
-  "sni_routes": {
-    "www.microsoft.com": "www.microsoft.com:443",
-    "www.google.com": "www.google.com:443"
-  },
-  "traffic_limits_enabled": false
-}
+Первый публичный релиз.
+
+### Added
+- TLS 1.3 server from scratch (X25519 + HKDF-SHA256 + AES-128-GCM)
+- Xray-compatible REALITY (HMAC signature, session_id, fallback)
+- VLESS TCP + UDP relay
+- Anti-replay session_id cache
+- Rate limiting with auto-ban
+- Multi-user support
+- Statistics (uptime, connections, traffic)
+- Structured logging with rotation
+- vless:// link generator + QR code
+- CLI commands: status, stop, users, link
+- Graceful shutdown
+- Tests (pytest)
+- GitHub Actions CI
+- Docker support
+- README in Russian and English
+
+### Verified with
+- Happ (Android)
+- NekoBox (Android)
+- v2rayNG (Android)
+- Termux (Android)
+- Debian/Ubuntu (VPS)
+- Raspberry Pi 5
